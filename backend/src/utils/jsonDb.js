@@ -14,7 +14,13 @@ async function ensureDataDir() {
 
 // Get file path for a collection
 function getFilePath(collection) {
-  return path.join(DATA_DIR, `${collection}.json`);
+  const filePath = path.join(DATA_DIR, `${collection}.json`);
+  // Log the resolved path once (using a flag to avoid spam)
+  if (!getFilePath._logged) {
+    console.log(`📁 Data directory: ${DATA_DIR}`);
+    getFilePath._logged = true;
+  }
+  return filePath;
 }
 
 // Read data from JSON file
@@ -23,6 +29,12 @@ async function readData(collection) {
   const filePath = getFilePath(collection);
   try {
     const data = await fs.readFile(filePath, 'utf8');
+    // Handle empty files
+    const trimmedData = data.trim();
+    if (!trimmedData) {
+      await fs.writeFile(filePath, JSON.stringify([], null, 2));
+      return [];
+    }
     return JSON.parse(data);
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -30,15 +42,35 @@ async function readData(collection) {
       await fs.writeFile(filePath, JSON.stringify([], null, 2));
       return [];
     }
+    // JSON parse error - backup file and create new one
+    if (error instanceof SyntaxError) {
+      console.error(`JSON parse error in ${filePath}. Backing up and creating new file.`);
+      try {
+        const backupPath = `${filePath}.backup.${Date.now()}`;
+        await fs.copyFile(filePath, backupPath);
+        await fs.writeFile(filePath, JSON.stringify([], null, 2));
+        return [];
+      } catch (backupError) {
+        console.error('Error creating backup:', backupError);
+        await fs.writeFile(filePath, JSON.stringify([], null, 2));
+        return [];
+      }
+    }
     throw error;
   }
 }
 
 // Write data to JSON file
 async function writeData(collection, data) {
-  await ensureDataDir();
-  const filePath = getFilePath(collection);
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
+  try {
+    await ensureDataDir();
+    const filePath = getFilePath(collection);
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`✓ Successfully wrote ${data.length} record(s) to ${filePath}`);
+  } catch (error) {
+    console.error(`✗ Error writing to ${getFilePath(collection)}:`, error);
+    throw error;
+  }
 }
 
 // Generate unique ID
@@ -62,7 +94,9 @@ class JsonDb {
       updatedAt: new Date().toISOString()
     };
     data.push(newDoc);
+    console.log(`Creating new document in ${this.collection}:`, { id: newDoc.id, email: newDoc.email || 'N/A' });
     await writeData(this.collection, data);
+    console.log(`✓ Document created successfully with ID: ${newDoc.id}`);
     return newDoc;
   }
 

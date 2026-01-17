@@ -23,10 +23,12 @@ class UserService {
     // Hash password
     const hashedPassword = await bcrypt.hash(userData.password, 10);
 
-    // Create user
+    // Create user (ensure isActive is set, exclude password from userData)
+    const { password, ...userDataWithoutPassword } = userData;
     const user = await db.create({
-      ...userData,
-      password: hashedPassword
+      ...userDataWithoutPassword,
+      password: hashedPassword,
+      isActive: userData.isActive !== undefined ? userData.isActive : true
     });
 
     const userObj = new User(user);
